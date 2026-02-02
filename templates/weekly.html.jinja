@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #333;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+
+        .container {
+            background: #fff;
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        h2 {
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+            color: #007bff;
+        }
+
+        h3 {
+            margin-top: 25px;
+            color: #444;
+            border-left: 5px solid #ddd;
+            padding-left: 10px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        th {
+            background: #f8f9fa;
+            text-align: left;
+            padding: 10px;
+            border-bottom: 2px solid #ddd;
+        }
+
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .stat-card {
+            display: inline-block;
+            width: 30%;
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+            margin-right: 2%;
+            vertical-align: top;
+        }
+
+        .stat-val {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .good {
+            color: #27ae60;
+            font-weight: bold;
+        }
+
+        .warn {
+            color: #f39c12;
+            font-weight: bold;
+        }
+
+        .danger {
+            color: #c0392b;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>Weekly Infrastructure Report</h2>
+        <p><b>Period:</b> Last 7 Days ({{ start_date.strftime('%Y-%m-%d') }} - {{ end_date.strftime('%Y-%m-%d') }})</p>
+
+        <h3>Server Health (Node Exporter)</h3>
+        <div>
+            {% set disk_used = query_prom('sum(node_filesystem_size_bytes{mountpoint="/"}) -
+            sum(node_filesystem_avail_bytes{mountpoint="/"})') %}
+            {% set disk_total = query_prom('sum(node_filesystem_size_bytes{mountpoint="/"})') %}
+            {% set disk_percent = (disk_used / disk_total) * 100 if disk_total > 0 else 0 %}
+
+            <div class="stat-card">
+                <div class="stat-val {% if disk_percent > 85 %}danger{% endif %}">{{ disk_percent | fmt_pct }}</div>
+                <div class="stat-label">Disk Usage</div>
+                <div style="font-size: 10px; color: #999">Free: {{ (disk_total - disk_used) | fmt_bytes }}</div>
+            </div>
+
+            {% set mem_total = query_prom('node_memory_MemTotal_bytes') %}
+            {% set mem_avail_avg = query_prom('avg_over_time(node_memory_MemAvailable_bytes[7d])') %}
+            {% set mem_used_avg = mem_total - mem_avail_avg %}
+
+            <div class="stat-card">
+                <div class="stat-val">{{ mem_used_avg | fmt_bytes }}</div>
+                <div class="stat-label">Avg RAM Used</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-val">{{ query_prom('max_over_time(node_load1[7d])') | round(2) }}</div>
+                <div class="stat-label">Max Load (1m)</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-val">{{ (now - (query_prom('node_boot_time_seconds') | from_epoch)) | format_timedelta
+                    }}</div>
+                <div class="stat-label">Uptime</div>
+            </div>
+        </div>
+
+        <h3>Website Traffic (Traefik)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Service</th>
+                    <th>Requests</th>
+                    <th>Errors (5xx)</th>
+                    <th>Success Rate</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for svc in services %}
+                {# Fetch Metrics inside the loop #}
+                {% set req_total = query_prom('sum(increase(traefik_service_requests_total{service="' + svc +
+                '"}[7d]))') %}
+                {% set err_total = query_prom('sum(increase(traefik_service_requests_total{service="' + svc + '",
+                code=~"5.."}[7d]))') %}
+
+                {# Calculate Success Rate #}
+                {% set success_rate = 100 %}
+                {% if req_total > 0 %}
+                {% set success_rate = 100 - ((err_total / req_total) * 100) %}
+                {% endif %}
+
+                <tr>
+                    <td><b>{{ svc.replace('@docker', '') }}</b></td>
+                    <td>{{ "{:,.0f}".format(req_total) }}</td>
+                    <td class="{% if err_total > 0 %}danger{% else %}good{% endif %}">
+                        {{ "{:,.0f}".format(err_total) }}
+                    </td>
+                    <td>
+                        <span class="{% if success_rate < 99 %}danger{% else %}good{% endif %}">
+                            {{ success_rate | fmt_pct }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <h3>Traffic Origin (Geo & Network)</h3>
+
+        <div style="display: flex; gap: 20px;">
+            <div style="flex: 1;">
+                <h4 style="margin-bottom: 5px; color: #555;">Top Countries</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Country</th>
+                            <th style="text-align: right;">Reqs</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {# Query for Country Code #}
+                        {% set countries = query_loki_top('{job="traefik"}', 'traefik_geolite_country_code', 10) %}
+
+                        {% for c in countries %}
+                        <tr>
+                            <td>
+                                <span style="font-family: monospace; font-weight: bold;">
+                                    {{ c.name }}
+                                </span>
+                            </td>
+                            <td style="text-align: right;">{{ "{:,}".format(c.count) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="2"><i>No Geo Data</i></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="flex: 1;">
+                <h4 style="margin-bottom: 5px; color: #555;">Top Networks (ASN)</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Organization</th>
+                            <th style="text-align: right;">Reqs</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {# Query for AS Organization #}
+                        {% set asns = query_loki_top('{job="traefik"}',
+                        'traefik_geolite_autonomous_system_organization', 10) %}
+
+                        {% for org in asns %}
+                        <tr>
+                            <td title="{{ org.name }}">
+                                {{ org.name[:25] }}{% if org.name|length > 25 %}...{% endif %}
+                            </td>
+                            <td style="text-align: right;">{{ "{:,}".format(org.count) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="2"><i>No ASN Data</i></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <h3>Top Errors (Logs)</h3>
+        <table>
+            {% set logs = query_loki('{job="syslog"} |= "error"') %}
+            {% if logs %}
+            {% for l in logs %}
+            <tr>
+                <td width="10%"><b>{{ l.count }}x</b></td>
+                <td style="color: #c0392b; font-family: monospace; font-size: 12px;">{{ l.message }}</td>
+            </tr>
+            {% endfor %}
+            {% else %}
+            <tr>
+                <td><i>No significant errors found in logs.</i></td>
+            </tr>
+            {% endif %}
+        </table>
+
+        <h3>Fail2Ban</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Jail</th>
+                    <th>Fails</th>
+                    <th>Bans</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% set f2b_stats = (query_prom_raw('f2b_jail_failed_total') | list | sort(attribute='value',
+                reverse=True)) %}
+                {% for stat in f2b_stats %}
+                <tr>
+                    <td>{{ stat.metric.jail }}</td>
+                    <td>{{ "{:,}".format(stat.value[1]|int) }}</td>
+                    {% set bans = query_prom_raw('f2b_jail_banned_total{jail="' + stat.metric.jail + '"}') %}
+                    <td>{{ "{:,}".format(bans[0].value[1]|int) if bans else "0" }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3"><i>No Fail2Ban data available.</i></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <h3>Backups</h3>
+        <div>
+            {% set last_backup = query_prom('max_over_time(resticprofile_backup_time_seconds[7d])') | from_epoch %}
+            {% set backup_status = query_prom('last_over_time(resticprofile_backup_status[7d])') %}
+
+            {% if backup_status is not none %}
+            <div class="stat-card" class="{% if backup_status != 2 %}danger{% else %}good{% endif %}">
+                <div class="stat-val {% if backup_status != 2 %}danger{% else %}good{% endif %}">
+                    {% if backup_status == 2 %}
+                    Successful
+                    {% else %}
+                    Failed
+                    {% endif %}
+                </div>
+                <div class="stat-label">Last Backup Status</div>
+            </div>
+            {% else %}
+            <div class="stat-card">
+                <div class="stat-val danger">No Data</div>
+                <div class="stat-label">Last Backup Status</div>
+            </div>
+            {% endif %}
+            <div class="stat-card" class="{% if backup_status != 0 %}danger{% else %}good{% endif %}">
+                <div class="stat-val">{{ last_backup.strftime('%Y-%m-%d %H:%M') if last_backup else 'N/A' }}</div>
+                <div class="stat-label">Last Backup</div>
+            </div>
+        </div>
+
+        <h4>Last Backup Log</h4>
+        <pre
+            style="background: #f0f0f0; padding: 10px; border-radius: 5px; max-height: 200px; overflow-y: auto; font-size: 12px;">
+                {% set backup_logs = query_loki_raw('{job="fail2ban"}') %}
+                {% if backup_logs %}
+                {{ backup_logs[0].message }}
+                {% else %}
+                No backup logs found.
+                {% endif %}
+        </pre>
+    </div>
+
+    <p style="text-align: center; margin-top: 40px; color: #aaa; font-size: 12px;">
+        Generated by Python Auto-Reporter
+    </p>
+    </div>
+</body>
+
+</html>
