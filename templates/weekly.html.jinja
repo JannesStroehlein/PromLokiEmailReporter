@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html>
-
 <head>
     <style>
         body {
@@ -94,8 +93,16 @@
 
 <body>
     <div class="container">
+        {% if time_selection == "7d" %}
         <h2>Weekly Infrastructure Report</h2>
         <p><b>Period:</b> Last 7 Days ({{ start_date.strftime('%Y-%m-%d') }} - {{ end_date.strftime('%Y-%m-%d') }})</p>
+        {% elif time_selection == "24h" or time_selection == "1d" %}
+        <h2>Daily Infrastructure Report</h2>
+        <p><b>Period:</b> Last 24 Hours ({{ start_date.strftime('%Y-%m-%d') }} - {{ end_date.strftime('%Y-%m-%d') }})</p>
+        {% else %}
+        <h2>Custom Infrastructure Report</h2>
+        <p><b>Period:</b> {{ start_date.strftime('%Y-%m-%d') }} to {{ end_date.strftime('%Y-%m-%d') }}</p>
+        {% endif %}
 
         <h3>Server Health (Node Exporter)</h3>
         <div>
@@ -111,7 +118,7 @@
             </div>
 
             {% set mem_total = query_prom('node_memory_MemTotal_bytes') %}
-            {% set mem_avail_avg = query_prom('avg_over_time(node_memory_MemAvailable_bytes[7d])') %}
+            {% set mem_avail_avg = query_prom('avg_over_time(node_memory_MemAvailable_bytes[' + time_selection + '])') %}
             {% set mem_used_avg = mem_total - mem_avail_avg %}
 
             <div class="stat-card">
@@ -120,7 +127,7 @@
             </div>
 
             <div class="stat-card">
-                <div class="stat-val">{{ query_prom('max_over_time(node_load1[7d])') | round(2) }}</div>
+                <div class="stat-val">{{ query_prom('max_over_time(node_load1[' + time_selection + '])') | round(2) }}</div>
                 <div class="stat-label">Max Load (1m)</div>
             </div>
 
@@ -145,9 +152,9 @@
                 {% for svc in services %}
                 {# Fetch Metrics inside the loop #}
                 {% set req_total = query_prom('sum(increase(traefik_service_requests_total{service="' + svc +
-                '"}[7d]))') %}
+                '"}[' + time_selection + ']))') %}
                 {% set err_total = query_prom('sum(increase(traefik_service_requests_total{service="' + svc + '",
-                code=~"5.."}[7d]))') %}
+                code=~"5.."}[' + time_selection + ']))') %}
 
                 {# Calculate Success Rate #}
                 {% set success_rate = 100 %}
@@ -170,6 +177,64 @@
                 {% endfor %}
             </tbody>
         </table>
+
+        <h3>Top Services (Traefik)</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 10px;">
+            <div>
+                <h4 style="margin-bottom: 5px; color: #555;">Top Services</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Service</th>
+                            <th style="text-align: right;">Requests</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {# Query for Top Services #}
+                        {% set top_services = query_loki_top('{job="traefik"}', 'traefik_serviceName', 10) %}
+
+                        {% for svc in top_services %}
+                        <tr>
+                            <td><b>{{ svc.name.replace('@docker', '') }}</b></td>
+                            <td style="text-align: right;">{{ "{:,}".format(svc.count) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="2"><i>No service data available.</i></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div>
+                <h4 style="margin-bottom: 5px; color: #555;">Top Hosts</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Host</th>
+                            <th style="text-align: right;">Requests</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {# Query for Top Hosts #}
+                        {% set top_hosts = query_loki_top('{job="traefik"}', 'traefik_requestHost', 10) %}
+
+                        {% for host in top_hosts %}
+                        <tr>
+                            <td><b>{{ host.name.replace('@docker', '') }}</b></td>
+                            <td style="text-align: right;">{{ "{:,}".format(host.count) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="2"><i>No host data available.</i></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
 
         <h3>Traffic Origin (Geo & Network)</h3>
 
@@ -282,8 +347,8 @@
 
         <h3>Backups</h3>
         <div>
-            {% set last_backup = query_prom('max_over_time(resticprofile_backup_time_seconds[7d])') | from_epoch %}
-            {% set backup_status = query_prom('last_over_time(resticprofile_backup_status[7d])') %}
+            {% set last_backup = query_prom('max_over_time(resticprofile_backup_time_seconds[' + time_selection + '])') | from_epoch %}
+            {% set backup_status = query_prom('last_over_time(resticprofile_backup_status[' + time_selection + '])') %}
 
             {% if backup_status is not none %}
             <div class="stat-card" class="{% if backup_status != 2 %}danger{% else %}good{% endif %}">
@@ -306,18 +371,23 @@
                 <div class="stat-val">{{ last_backup.strftime('%Y-%m-%d %H:%M') if last_backup else 'N/A' }}</div>
                 <div class="stat-label">Last Backup</div>
             </div>
+            {% set last_backup_duration = query_prom('last_over_time(resticprofile_backup_duration_seconds[' + time_selection + '])') | to_timedelta %}
+            <div class="stat-card">
+                <div class="stat-val">{{ last_backup_duration | format_timedelta if last_backup_duration else 'N/A'
+                    }}</div>
+                <div class="stat-label">Last Backup Duration</div>
+            </div>
+            {% set processed_bytes = query_prom('last_over_time(resticprofile_backup_processed_bytes[' + time_selection + '])') %}
+            <div class="stat-card">
+                <div class="stat-val">{{ processed_bytes | fmt_bytes if processed_bytes else 'N/A' }}</div>
+                <div class="stat-label">Last Processed Bytes</div>
+            </div>
         </div>
 
         <h4>Last Backup Log</h4>
-        <pre
-            style="background: #f0f0f0; padding: 10px; border-radius: 5px; max-height: 200px; overflow-y: auto; font-size: 12px;">
-                {% set backup_logs = query_loki_raw('{job="fail2ban"}') %}
-                {% if backup_logs %}
-                {{ backup_logs[0].message }}
-                {% else %}
-                No backup logs found.
-                {% endif %}
-        </pre>
+        {% set backup_logs = query_loki_raw('{job="resticprofile"}', limit=50) %}
+        <pre style="background: #f0f0f0; padding: 10px; border-radius: 5px; max-height: 200px; overflow-y: auto; font-size: 12px;">{% if backup_logs %}{% for log in backup_logs %}
+{{ log.message }}{% endfor %}{% else %}No backup logs found.{% endif %}</pre>
     </div>
 
     <p style="text-align: center; margin-top: 40px; color: #aaa; font-size: 12px;">
@@ -325,5 +395,4 @@
     </p>
     </div>
 </body>
-
 </html>

@@ -179,8 +179,8 @@ def format_timedelta(td: timedelta):
 def get_template(path: str):
     return env.get_template(path)
 
-def render_html():
-    template = get_template("weekly.html.jinja")
+def render_html(path: str):
+    template = get_template(path)
 
     start_date, end_date = get_date_range(time_selection)
 
@@ -193,16 +193,15 @@ def render_html():
     )
 
 
-def send_email():
+def send_email(path: str, subject: str):
     msg = MIMEMultipart()
-    msg['Subject'] = f"Weekly Infrastructure Report - {
-        datetime.now().strftime('%Y-%m-%d')}"
+    msg['Subject'] = subject
     msg['From'] = f"{SMTP_FROM_NAME} <{SMTP_USER}>"
     msg['To'] = EMAIL_TO
 
     # HTML Body
 
-    html_body = render_html()
+    html_body = render_html(path)
     msg.attach(MIMEText(html_body, 'html'))
 
     with smtplib.SMTP_SSL(SMTP_SERVER, 465) as server:
@@ -237,7 +236,14 @@ def get_date_range(selector: str):
         end_date
     )
 
-def template_dev_server(path: str):
+def render_email_subject(template_str: str):
+    template = env.from_string(template_str)
+    return template.render(
+        time_selection=time_selection,
+        date=datetime.now().strftime("%Y-%m-%d")
+    )
+
+def template_dev_server(path: str, port: int):
     """
     Starts a HTTP server that serves the template output. The template is re-rendered when the page is refreshed.
     
@@ -252,44 +258,60 @@ def template_dev_server(path: str):
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
             self.end_headers()
-            html = render_html()
+            html = render_html(path)
             self.wfile.write(html.encode('utf-8'))
 
-    server_address = ('', 8000)
+    server_address = ('', port)
     httpd = HTTPServer(server_address, RequestHandler)
     print("Starting template dev server at http://localhost:8000")
     httpd.serve_forever()
 
-
-# --- MAIN ---
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog='J3SReports')
-    parser.add_argument('--template-dev-server',
-                        action='store_true',
-                        help='Start a local HTTP server to serve the template output for development')
-    parser.add_argument('-t', '--time',
-                        help='Set the time selection for the stats (24h, 7d)')
-    parser.add_argument('--subject-template',
-                        help='Set a custom subject template for the email report')
-    args = parser.parse_args()
-
-    time_selection = args.time if args.time else time_selection
-
-    print(get_date_range(time_selection))
-
+def setup_jinja_env():
     env.globals['now'] = datetime.now(timezone.utc)
     env.globals['query_prom'] = query_prom
     env.globals['query_prom_raw'] = query_prom_raw
     env.globals['query_loki'] = query_loki
     env.globals['query_loki_top'] = query_loki_top
     env.globals['query_loki_raw'] = query_loki_raw
-
+    
+    env.filters['to_timedelta'] = lambda x: timedelta(seconds=int(x))
     env.filters['format_timedelta'] = format_timedelta
     env.filters['from_epoch'] = from_epoch
     env.filters['fmt_bytes'] = format_bytes
     env.filters['fmt_pct'] = format_percent
-    if args.template_dev_server:
-        template_dev_server("weekly.html.jinja")
+
+# --- MAIN ---
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(prog='J3SReports')
+    parser.add_argument('-t', '--time',
+                        default='7d',
+                        help='Set the time selection for the stats (24h, 7d)')
+    parser.add_argument('--template-path',
+                        default='weekly.html.jinja',
+                        help='Set the template path to use for the report')
+    
+    # Verb for dev server or send email
+    commands = parser.add_subparsers(title='sub-commands')
+
+    mail_parser = commands.add_parser('send-email', help='Send the email report')
+    mail_parser.add_argument('--subject-template',
+                            default='Weekly Infrastructure Report - {{ date }}',
+                            help='Set a custom subject template for the email report')
+    
+    dev_parser = commands.add_parser('template-dev-server', help='Start a local HTTP server to serve the template output for development')
+    dev_parser.add_argument('--port', type=int, default=8000, help='Port for the dev server (default: 8000)')
+
+    args = parser.parse_args()
+
+    time_selection = args.time if args.time else time_selection
+
+    setup_jinja_env()
+
+    if not commands.choices:
+        parser.print_help()
     else:
-        send_email()
-        print("Report sent!")
+        if 'send-email' in commands.choices and isinstance(args, argparse.Namespace) and hasattr(args, 'subject_template'):
+            send_email(args.template_path, render_email_subject(args.subject_template))
+            print("Report sent!")
+        else:
+            template_dev_server(args.template_path, args.port)
