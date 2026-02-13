@@ -1,5 +1,9 @@
-import requests
+"""
+Abstraction layer for querying Loki logs. Provides methods for raw queries, 
+range queries, and top-N queries by label.
+"""
 from datetime import datetime
+import requests
 from requests.auth import HTTPBasicAuth
 
 class LokiClient:
@@ -26,7 +30,8 @@ class LokiClient:
             return int(ts.timestamp() * 1_000_000_000)
         raise TypeError(f"Unsupported timestamp type: {type(ts)!r}")
 
-    def query_raw(self, logql: str, time=None, limit: int | None = None, direction: str | None = None):
+    def query_raw(self, logql: str, time=None, limit: int | None = None,
+                  direction: str | None = None):
         """
         Instant query against Loki.
 
@@ -97,7 +102,7 @@ class LokiClient:
         except Exception as e:
             print(f"Loki Range Error: {e}")
             return []
-        
+
     def query_top(self, selector: str, label: str, limit: int = 10, time_selection: str = "7d"):
         """
         Generic Top-N query for any label (Country, ASN, UserAgent, etc.)
@@ -107,7 +112,7 @@ class LokiClient:
         """
         logql = f'topk({limit}, sum by ({
             label}) (count_over_time({selector} [{time_selection}])))'
-        
+
         try:
             results = self.query_raw(logql)
             parsed = []

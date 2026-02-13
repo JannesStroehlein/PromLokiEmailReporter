@@ -18,7 +18,7 @@ from requests.auth import HTTPBasicAuth
 from prometheus_api_client.prometheus_connect import PrometheusConnect
 
 from jinja2 import Environment, FileSystemLoader
-from LokiClient import LokiClient
+from loki_client import LokiClient
 from settings import Settings
 from template_dev_server import TemplateDevServer
 
