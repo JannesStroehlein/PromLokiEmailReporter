@@ -23,35 +23,24 @@ Some arguments are applicable to all commands:
 Send an email report with a custom subject:
 
 ```bash
-uv run metric-memo send-email --subject-template "Custom Report - {{ date }}"
+uvx metric-memo send-email --subject-template "Custom Report - {{ date }}"
 ```
 
 Start the template development server on a specific port:
 
 ```bash
-uv run metric-memo template-dev-server --port 8080
+uvx metric-memo template-dev-server --port 8080
 ```
 
 ## Installation
 
-To setup the project, first clone the repository and navigate to the project directory.
+To use this tool, you need to have Python 3.10 or higher installed on your system. If you have pip installed, you can install the tool directly with:
 
 ```bash
-git clone https://github.com/JannesStroehlein/MetricMemo.git
-cd MetricMemo
+pip install metric-memo
 ```
 
-This project uses [UV](https://github.com/astral-sh/uv) for dependency management. To install UV follow their instruction [here](https://github.com/astral-sh/uv#installation). Once UV is installed, you can install the project dependencies with and create a virtual environment by running:
-
-```bash
-uv sync
-```
-
-Once the dependencies are installed, you can run the CLI with:
-
-```bash
-uv run metric-memo [command] [options]
-```
+This will install the `metric-memo` command globally, allowing you to run it from any terminal.
 
 ## Environment Variables
 
@@ -114,8 +103,8 @@ I use this tool to generate a weekly and daily infrastructure report that includ
 First install the tool and set up the environment variables as described in the installation section. Then, I added the following lines to schedule the reports to my crontab using `crontab -e`:
 
 ```cron
-0 6 * * 1 cd ~/reporting && .venv/bin/metric-memo -t 7d send-email --subject-template "Weekly Infrastructure Report - {{ date }}" >> ~/reporting/report.weekly.log 2>&1
-0 6 * * * cd ~/reporting && .venv/bin/metric-memo -t 1d send-email --subject-template "Daily Infrastructure Report - {{ date }}" >> ~/reporting/report.daily.log 2>&1
+0 6 * * 1 cd ~/reporting && metric-memo -t 7d send-email --subject-template "Weekly Infrastructure Report - {{ date }}" >> ~/reporting/report.weekly.log 2>&1
+0 6 * * * cd ~/reporting && metric-memo -t 1d send-email --subject-template "Daily Infrastructure Report - {{ date }}" >> ~/reporting/report.daily.log 2>&1
 ```
 
 ### Troubleshooting
@@ -123,9 +112,27 @@ First install the tool and set up the environment variables as described in the 
 If the setup didn't work right away, make sure to check the following:
 
 - You replaced `~/reporting` with the actual path to the directory where you cloned the repository and set up the tool.
-- The virtual environment is correctly activated in the cron job command (e.g., `.venv/bin/python`).
-  - If this is not working, you might didn't run the `uv sync` command to create the virtual environment and install dependencies. More information on how to do this can be found in the [Installation](#installation) section.
 - Check the log files (`~/reporting/report.weekly.log` and `~/reporting/report.daily.log`) for any error messages that can help identify what went wrong.
 
 > [!NOTE]
 > I have only tested this setup on Linux machine with Ubuntu 24.04.3 LTS. If you are using a different operating system, you may need to adjust the cron job setup accordingly (e.g., using Task Scheduler on Windows or launchd on macOS).
+
+## Contributing
+
+Contributions to this project are welcome! If you have any ideas for improvements, bug fixes, or new features, please feel free to submit a pull request.
+
+### Setup development environment
+
+This project uses [UV](https://github.com/astral-sh/uv) for dependency management. To install UV follow their instruction [here](https://github.com/astral-sh/uv#installation). Once UV is installed, you can clone the repository and install the project dependencies with and create a virtual environment by running:
+
+```bash
+git clone https://github.com/JannesStroehlein/MetricMemo.git
+cd MetricMemo
+uv sync
+```
+
+Once the dependencies are installed, you can run the CLI with:
+
+```bash
+uv run metric-memo [command] [options]
+```
