@@ -1,4 +1,4 @@
-# Prometheus & Loki Reporting Tool
+# MetricMemo
 
 This tool can generate and send HTML email reports based on data queried from Prometheus and Loki. It supports customizable email templates and includes a development server for template testing.
 
@@ -37,8 +37,8 @@ uv run main.py template-dev-server --port 8080
 To setup the project, first clone the repository and navigate to the project directory.
 
 ```bash
-git clone https://github.com/JannesStroehlein/PromLokiEmailReporter.git
-cd PromLokiEmailReporter
+git clone https://github.com/JannesStroehlein/MetricMemo.git
+cd MetricMemo
 ```
 
 This project uses [UV](https://github.com/astral-sh/uv) for dependency management. To install UV follow their instruction [here](https://github.com/astral-sh/uv#installation). Once UV is installed, you can install the project dependencies with and create a virtual environment by running:
