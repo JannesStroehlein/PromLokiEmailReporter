@@ -34,7 +34,14 @@ uv run main.py template-dev-server --port 8080
 
 ## Installation
 
-This project uses [UV](https://github.com/astral-sh/uv) for dependency management. To install UV follow their instruction [here](https://github.com/astral-sh/uv#installation). Once UV is installed, you can install the project dependencies with:
+To setup the project, first clone the repository and navigate to the project directory.
+
+```bash
+git clone https://github.com/JannesStroehlein/PromLokiEmailReporter.git
+cd PromLokiEmailReporter
+```
+
+This project uses [UV](https://github.com/astral-sh/uv) for dependency management. To install UV follow their instruction [here](https://github.com/astral-sh/uv#installation). Once UV is installed, you can install the project dependencies with and create a virtual environment by running:
 
 ```bash
 uv sync
@@ -99,3 +106,26 @@ The following custom filters are available within the Jinja2 template:
 - `fmt_timedelta(value)`: Formats a timedelta value into a human-readable string (e.g., "2d 3h").
 - `from_epoch(value)`: Converts an epoch timestamp to a human-readable date string.
 - `to_timedelta(value)`: Converts a number of seconds into a timedelta object.
+
+## Automatic Reporting with cron jobs
+
+I use this tool to generate a weekly and daily infrastructure report that includes key metrics from Prometheus and recent error logs from Loki. The report is sent every morning at 6 AM to me. I achieved this by setting up a cron job that runs the `send-email` command with the appropriate time selection:
+
+First install the tool and set up the environment variables as described in the installation section. Then, I added the following lines to schedule the reports to my crontab using `crontab -e`:
+
+```cron
+0 6 * * 1 cd ~/reporting && .venv/bin/python main.py -t 7d send-email --subject-template "Weekly Infrastructure Report - {{ date }}" >> ~/reporting/report.weekly.log 2>&1
+0 6 * * * cd ~/reporting && .venv/bin/python main.py -t 1d send-email --subject-template "Daily Infrastructure Report - {{ date }}" >> ~/reporting/report.daily.log 2>&1
+```
+
+### Troubleshooting
+
+If the setup didn't work right away, make sure to check the following:
+
+- You replaced `~/reporting` with the actual path to the directory where you cloned the repository and set up the tool.
+- The virtual environment is correctly activated in the cron job command (e.g., `.venv/bin/python`).
+  - If this is not working, you might didn't run the `uv sync` command to create the virtual environment and install dependencies. More information on how to do this can be found in the [Installation](#installation) section.
+- Check the log files (`~/reporting/report.weekly.log` and `~/reporting/report.daily.log`) for any error messages that can help identify what went wrong.
+
+> [!NOTE]
+> I have only tested this setup on Linux machine with Ubuntu 24.04.3 LTS. If you are using a different operating system, you may need to adjust the cron job setup accordingly (e.g., using Task Scheduler on Windows or launchd on macOS).
