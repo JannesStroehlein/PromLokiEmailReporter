@@ -17,12 +17,14 @@ class QueryService:
         try:
             res = self.prom.custom_query(query)
             return int(float(res[0]["value"][1])) if res else 0
+        # pylint: disable=broad-except
         except Exception as e:
             return f"Error: {e}"
 
     def query_prom_raw(self, query: str) -> list:
         try:
             return self.prom.custom_query(query)
+        # pylint: disable=broad-except
         except Exception as e:
             print(f"Prometheus Error: {e}")
             return []
@@ -38,6 +40,7 @@ class QueryService:
                 }
                 for item in results
             ]
+        # pylint: disable=broad-except
         except Exception as e:
             print("Error querying loki", e)
             return []
@@ -46,6 +49,7 @@ class QueryService:
         try:
             results = self.loki.query_top(selector, label, limit, self.time_selection)
             return sorted(results, key=lambda x: x["count"], reverse=True)
+        # pylint: disable=broad-except
         except Exception as e:
             print(f"Loki Error on {label}: {e}")
             return []
@@ -75,6 +79,7 @@ class QueryService:
 
             flattened.sort(key=lambda x: x["timestamp"], reverse=True)
             return flattened
+        # pylint: disable=broad-except
         except Exception as e:
             print(f"Loki Raw Query Error: {e}")
             return []

@@ -18,6 +18,7 @@ def main() -> int:
 
     try:
         app_settings = Settings()
+    # pylint: disable=broad-except
     except Exception as e:
         print(f"Framework Error: Failed to load settings. {e}")
         return 1
@@ -32,6 +33,7 @@ def main() -> int:
         try:
             run_send_email(runtime, args.template_path, args.subject_template)
             print("Report sent!")
+        # pylint: disable=broad-except
         except Exception as e:
             print(f"Error sending email: {e}")
             return 1
@@ -43,6 +45,10 @@ def main() -> int:
         except KeyboardInterrupt:
             print("\nServer stopped.")
             return 130
+        # pylint: disable=broad-except
+        except Exception as e:
+            print(f"Error running template dev server: {e}")
+            return 1
         return 0
 
     return 2
